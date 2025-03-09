@@ -196,6 +196,7 @@ static ssize_t _modbus_udp_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length)
         int len = ctx_udp->_u > rsp_length ? rsp_length : ctx_udp->_u;
         memcpy(rsp, ctx_udp->buffer, (size_t)len);
         ctx_udp->_u -= len;
+        memmove(ctx_udp->buffer, ctx_udp->buffer + len, (size_t)ctx_udp->_u);
         return len;
     }
     else
