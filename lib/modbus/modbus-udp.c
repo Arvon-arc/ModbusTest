@@ -5,12 +5,12 @@
  */
 
 #if defined(_WIN32)
-# define OS_WIN32
+#define OS_WIN32
 /* ws2_32.dll has getaddrinfo and freeaddrinfo on Windows XP and later.
  * minwg32 headers check WINVER before allowing the use of these */
-# ifndef WINVER
-#   define WINVER 0x0501
-# endif
+#ifndef WINVER
+#define WINVER 0x0501
+#endif
 #endif
 
 #include <stdio.h>
@@ -25,24 +25,24 @@
 
 #if defined(_WIN32)
 /* Already set in modbus-udp.h but it seems order matters in VS2005 */
-# include <winsock2.h>
-# include <ws2tcpip.h>
-# define SHUT_RDWR 2
-# define close closesocket
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define SHUT_RDWR 2
+#define close closesocket
 #else
-# include <sys/socket.h>
-# include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
 
 #if defined(__OpenBSD__) || (defined(__FreeBSD__) && __FreeBSD__ < 5)
-# define OS_BSD
-# include <netinet/in_systm.h>
+#define OS_BSD
+#include <netinet/in_systm.h>
 #endif
 
-# include <netinet/in.h>
-# include <netinet/ip.h>
-# include <netinet/tcp.h>
-# include <arpa/inet.h>
-# include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #endif
 
 #if !defined(MSG_NOSIGNAL)
@@ -64,7 +64,8 @@ static int _modbus_udp_init_win32(void)
     /* Initialise Windows Socket API */
     WSADATA wsaData;
 
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    {
         fprintf(stderr, "WSAStartup() returned error code %d\n",
                 (unsigned int)GetLastError());
         errno = EIO;
@@ -77,13 +78,18 @@ static int _modbus_udp_init_win32(void)
 static int _modbus_set_slave(modbus_t *ctx, int slave)
 {
     /* Broadcast address is 0 (MODBUS_BROADCAST_ADDRESS) */
-    if (slave >= 0 && slave <= 247) {
+    if (slave >= 0 && slave <= 247)
+    {
         ctx->slave = slave;
-    } else if (slave == MODBUS_UDP_SLAVE) {
+    }
+    else if (slave == MODBUS_UDP_SLAVE)
+    {
         /* The special value MODBUS_UDP_SLAVE (0xFF) can be used in UDP mode to
          * restore the default value. */
         ctx->slave = slave;
-    } else {
+    }
+    else
+    {
         errno = EINVAL;
         return -1;
     }
@@ -146,7 +152,6 @@ static int _modbus_udp_build_response_basis(sft_t *sft, uint8_t *rsp)
     return _MODBUS_UDP_PRESET_RSP_LENGTH;
 }
 
-
 static int _modbus_udp_prepare_response_tid(const uint8_t *req, int *req_length)
 {
     return (req[0] << 8) + req[1];
@@ -169,39 +174,53 @@ static ssize_t _modbus_udp_send(modbus_t *ctx, const uint8_t *req, int req_lengt
        Requests not to send SIGPIPE on errors on stream oriented
        sockets when the other end breaks the connection.  The EPIPE
        error is still returned. */
-    return send(ctx->s, (const char *)req, req_length, MSG_NOSIGNAL);
+    modbus_udp_t *ctx_udp = ctx->backend_data;
+    struct sockaddr_in addr = ctx_udp->target_addr;
+    return sendto(ctx->s, (const char *)req, req_length, MSG_NOSIGNAL, (struct sockaddr *)&addr, sizeof(addr));
 }
 
-static int _modbus_udp_receive(modbus_t *ctx, uint8_t *req) {
+static int _modbus_udp_receive(modbus_t *ctx, uint8_t *req)
+{
     return _modbus_receive_msg(ctx, req, MSG_INDICATION);
 }
 
-static ssize_t _modbus_udp_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length) {
-	// Do some input buffer management.
-	modbus_udp_t *ctx_udp = ctx->backend_data;
-	if( ctx_udp->_u ) {
-		int len = ctx_udp->_u > rsp_length ? rsp_length : ctx_udp->_u;
-		memcpy(rsp, ctx_udp->buffer, (size_t) len);
-		ctx_udp->_u -= len;
-		return len;
-	} else {
-		if( rsp_length > MODBUS_UDP_MAX_ADU_LENGTH )
-			rsp_length = MODBUS_UDP_MAX_ADU_LENGTH;
+static ssize_t _modbus_udp_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length)
+{
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof(addr);
 
-		int b;
-		ssize_t rc = ioctl(ctx->s,FIONREAD, &b);
-		if( !rc ) {
-			rc = recv(ctx->s, (char *)ctx_udp->buffer, (size_t)b, 0);
-			if(rc > 0 ) {
-				ssize_t len = rc > rsp_length ? rsp_length: rc;
-				memcpy(rsp, ctx_udp->buffer, (size_t) len);
-				ctx_udp->_u = (int)(rc - len);
-				memmove(ctx_udp->buffer,ctx_udp->buffer+len,(size_t)ctx_udp->_u);
-				return len;
-			}
-		}
-	}
-	return -1;
+    // Do some input buffer management.
+    modbus_udp_t *ctx_udp = ctx->backend_data;
+    if (ctx_udp->_u)
+    {
+        int len = ctx_udp->_u > rsp_length ? rsp_length : ctx_udp->_u;
+        memcpy(rsp, ctx_udp->buffer, (size_t)len);
+        ctx_udp->_u -= len;
+        return len;
+    }
+    else
+    {
+        if (rsp_length > MODBUS_UDP_MAX_ADU_LENGTH)
+            rsp_length = MODBUS_UDP_MAX_ADU_LENGTH;
+
+        int b;
+        ssize_t rc = ioctl(ctx->s, FIONREAD, &b);
+        if (!rc)
+        {
+            rc = recvfrom(ctx->s, (char *)ctx_udp->buffer, (size_t)b, 0, (struct sockaddr *)&addr, &addrlen);
+            if (rc > 0)
+            {
+                // 存储客户端地址
+                memcpy(&ctx_udp->target_addr, &addr, sizeof(addr));
+                ssize_t len = rc > rsp_length ? rsp_length : rc;
+                memcpy(rsp, ctx_udp->buffer, (size_t)len);
+                ctx_udp->_u = (int)(rc - len);
+                memmove(ctx_udp->buffer, ctx_udp->buffer + len, (size_t)ctx_udp->_u);
+                return len;
+            }
+        }
+    }
+    return -1;
 }
 
 static int _modbus_udp_check_integrity(modbus_t *ctx, uint8_t *msg, const int msg_length)
@@ -213,8 +232,10 @@ static int _modbus_udp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
                                               const uint8_t *rsp, int rsp_length)
 {
     /* Check transaction ID */
-    if (req[0] != rsp[0] || req[1] != rsp[1]) {
-        if (ctx->debug) {
+    if (req[0] != rsp[0] || req[1] != rsp[1])
+    {
+        if (ctx->debug)
+        {
             fprintf(stderr, "Invalid transaction ID received 0x%X (not 0x%X)\n",
                     (rsp[0] << 8) + rsp[1], (req[0] << 8) + req[1]);
         }
@@ -223,8 +244,10 @@ static int _modbus_udp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
     }
 
     /* Check protocol ID */
-    if (rsp[2] != 0x0 && rsp[3] != 0x0) {
-        if (ctx->debug) {
+    if (rsp[2] != 0x0 && rsp[3] != 0x0)
+    {
+        if (ctx->debug)
+        {
             fprintf(stderr, "Invalid protocol ID received 0x%X (not 0x0)\n",
                     (rsp[2] << 8) + rsp[3]);
         }
@@ -277,7 +300,8 @@ static int _modbus_udp_set_ipv4_options(int s)
     option = IPTOS_LOWDELAY;
     rc = setsockopt(s, IPPROTO_IP, IP_TOS,
                     (const void *)&option, sizeof(int));
-    if (rc == -1) {
+    if (rc == -1)
+    {
         return -1;
     }
 #endif
@@ -292,13 +316,16 @@ static int _connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen,
 
 #ifdef OS_WIN32
     int wsaError = 0;
-    if (rc == -1) {
+    if (rc == -1)
+    {
         wsaError = WSAGetLastError();
     }
 
-    if (wsaError == WSAEWOULDBLOCK || wsaError == WSAEINPROGRESS) {
+    if (wsaError == WSAEWOULDBLOCK || wsaError == WSAEINPROGRESS)
+    {
 #else
-    if (rc == -1 && errno == EINPROGRESS) {
+    if (rc == -1 && errno == EINPROGRESS)
+    {
 #endif
         fd_set wset;
         int optval;
@@ -309,16 +336,20 @@ static int _connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen,
         FD_ZERO(&wset);
         FD_SET(sockfd, &wset);
         rc = select(sockfd + 1, NULL, &wset, NULL, &tv);
-        if (rc <= 0) {
+        if (rc <= 0)
+        {
             /* Timeout or fail */
             return -1;
         }
 
         /* The connection is established if SO_ERROR and optval are set to 0 */
         rc = getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void *)&optval, &optlen);
-        if (rc == 0 && optval == 0) {
+        if (rc == 0 && optval == 0)
+        {
             return 0;
-        } else {
+        }
+        else
+        {
             errno = ECONNREFUSED;
             return -1;
         }
@@ -331,12 +362,12 @@ static int _modbus_udp_connect(modbus_t *ctx)
 {
     int rc;
     /* Specialized version of sockaddr for Internet socket address (same size) */
-    struct sockaddr_in addr;
     modbus_udp_t *ctx_udp = ctx->backend_data;
     int flags = SOCK_DGRAM;
 
 #ifdef OS_WIN32
-    if (_modbus_udp_init_win32() == -1) {
+    if (_modbus_udp_init_win32() == -1)
+    {
         return -1;
     }
 #endif
@@ -350,30 +381,33 @@ static int _modbus_udp_connect(modbus_t *ctx)
 #endif
 
     ctx->s = socket(PF_INET, flags, 0);
-    if (ctx->s == -1) {
+    if (ctx->s == -1)
+    {
         return -1;
     }
 
     rc = _modbus_udp_set_ipv4_options(ctx->s);
-    if (rc == -1) {
+    if (rc == -1)
+    {
         close(ctx->s);
         ctx->s = -1;
         return -1;
     }
 
-    if (ctx->debug) {
+    if (ctx->debug)
+    {
         printf("Connecting to %s:%d\n", ctx_udp->ip, ctx_udp->port);
     }
 
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(ctx_udp->port);
-    addr.sin_addr.s_addr = inet_addr(ctx_udp->ip);
-    rc = _connect(ctx->s, (struct sockaddr *)&addr, sizeof(addr), &ctx->response_timeout);
-    if (rc == -1) {
-        close(ctx->s);
-        ctx->s = -1;
-        return -1;
-    }
+    ctx_udp->target_addr.sin_family = AF_INET;
+    ctx_udp->target_addr.sin_port = htons(ctx_udp->port);
+    ctx_udp->target_addr.sin_addr.s_addr = inet_addr(ctx_udp->ip);
+    // rc = _connect(ctx->s, (struct sockaddr *)&addr, sizeof(addr), &ctx->response_timeout);
+    // if (rc == -1) {
+    //     close(ctx->s);
+    //     ctx->s = -1;
+    //     return -1;
+    // }
 
     return 0;
 }
@@ -381,7 +415,8 @@ static int _modbus_udp_connect(modbus_t *ctx)
 /* Closes the network connection and socket in UDP mode */
 static void _modbus_udp_close(modbus_t *ctx)
 {
-    if (ctx->s != -1) {
+    if (ctx->s != -1)
+    {
         shutdown(ctx->s, SHUT_RDWR);
         close(ctx->s);
         ctx->s = -1;
@@ -394,9 +429,10 @@ static int _modbus_udp_flush(modbus_t *ctx)
     int rc_sum = 0;
 
     modbus_udp_t *ctx_udp = ctx->backend_data;
-	ctx_udp->_u = 0;
+    ctx_udp->_u = 0;
 
-    do {
+    do
+    {
         /* Extract the garbage from the socket */
         char devnull[MODBUS_UDP_MAX_ADU_LENGTH];
 #ifndef OS_WIN32
@@ -410,22 +446,75 @@ static int _modbus_udp_flush(modbus_t *ctx)
         tv.tv_usec = 0;
         FD_ZERO(&rset);
         FD_SET(ctx->s, &rset);
-        rc = select(ctx->s+1, &rset, NULL, NULL, &tv);
-        if (rc == -1) {
+        rc = select(ctx->s + 1, &rset, NULL, NULL, &tv);
+        if (rc == -1)
+        {
             return -1;
         }
 
-        if (rc == 1) {
+        if (rc == 1)
+        {
             /* There is data to flush */
             rc = recv(ctx->s, devnull, MODBUS_UDP_MAX_ADU_LENGTH, 0);
         }
 #endif
-        if (rc > 0) {
+        if (rc > 0)
+        {
             rc_sum += rc;
         }
     } while (rc == MODBUS_UDP_MAX_ADU_LENGTH);
 
     return rc_sum;
+}
+
+int modbus_udp_bind(modbus_t *ctx)
+{
+    int rc;
+    int enable;
+    struct sockaddr_in addr;
+    modbus_udp_t *ctx_udp;
+
+    if (ctx == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ctx_udp = ctx->backend_data;
+
+    ctx->s = socket(PF_INET, SOCK_DGRAM, 0);
+    if (ctx->s == -1)
+    {
+        return -1;
+    }
+
+    enable = 1;
+    if (setsockopt(ctx->s, SOL_SOCKET, SO_REUSEADDR, (char *)&enable, sizeof(enable)) == -1)
+    {
+        close(ctx->s);
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(ctx_udp->port);
+    if (ctx_udp->ip[0] == '0')
+    {
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    }
+    else
+    {
+        addr.sin_addr.s_addr = inet_addr(ctx_udp->ip);
+    }
+
+    rc = bind(ctx->s, (struct sockaddr *)&addr, sizeof(addr));
+    if (rc == -1)
+    {
+        close(ctx->s);
+        return -1;
+    }
+
+    return 0;
 }
 
 /* Listens for any request from one or many modbus masters in UDP */
@@ -437,7 +526,8 @@ int modbus_udp_listen(modbus_t *ctx, int nb_connection)
     struct sockaddr_in addr;
     modbus_udp_t *ctx_udp;
 
-    if (ctx == NULL) {
+    if (ctx == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
@@ -445,7 +535,8 @@ int modbus_udp_listen(modbus_t *ctx, int nb_connection)
     ctx_udp = ctx->backend_data;
 
 #ifdef OS_WIN32
-    if (_modbus_udp_init_win32() == -1) {
+    if (_modbus_udp_init_win32() == -1)
+    {
         return -1;
     }
 #endif
@@ -457,13 +548,15 @@ int modbus_udp_listen(modbus_t *ctx, int nb_connection)
 #endif
 
     new_s = socket(PF_INET, flags, IPPROTO_UDP);
-    if (new_s == -1) {
+    if (new_s == -1)
+    {
         return -1;
     }
 
     enable = 1;
     if (setsockopt(new_s, SOL_SOCKET, SO_REUSEADDR,
-                   (char *)&enable, sizeof(enable)) == -1) {
+                   (char *)&enable, sizeof(enable)) == -1)
+    {
         close(new_s);
         return -1;
     }
@@ -472,19 +565,24 @@ int modbus_udp_listen(modbus_t *ctx, int nb_connection)
     addr.sin_family = AF_INET;
     /* If the modbus port is < to 1024, we need the setuid root. */
     addr.sin_port = htons(ctx_udp->port);
-    if (ctx_udp->ip[0] == '0') {
+    if (ctx_udp->ip[0] == '0')
+    {
         /* Listen any addresses */
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    } else {
+    }
+    else
+    {
         /* Listen only specified IP address */
         addr.sin_addr.s_addr = inet_addr(ctx_udp->ip);
     }
-    if (bind(new_s, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+    if (bind(new_s, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+    {
         close(new_s);
         return -1;
     }
 
-    if (listen(new_s, nb_connection) == -1) {
+    if (listen(new_s, nb_connection) == -1)
+    {
         close(new_s);
         return -1;
     }
@@ -497,7 +595,8 @@ int modbus_udp_accept(modbus_t *ctx, int *s)
     struct sockaddr_in addr;
     socklen_t addrlen;
 
-    if (ctx == NULL) {
+    if (ctx == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
@@ -510,11 +609,13 @@ int modbus_udp_accept(modbus_t *ctx, int *s)
     ctx->s = accept(*s, (struct sockaddr *)&addr, &addrlen);
 #endif
 
-    if (ctx->s == -1) {
+    if (ctx->s == -1)
+    {
         return -1;
     }
 
-    if (ctx->debug) {
+    if (ctx->debug)
+    {
         printf("The client connection from %s is accepted\n",
                inet_ntoa(addr.sin_addr));
     }
@@ -527,7 +628,8 @@ int modbus_udp_pi_accept(modbus_t *ctx, int *s)
     struct sockaddr_storage addr;
     socklen_t addrlen;
 
-    if (ctx == NULL) {
+    if (ctx == NULL)
+    {
         errno = EINVAL;
         return -1;
     }
@@ -540,11 +642,13 @@ int modbus_udp_pi_accept(modbus_t *ctx, int *s)
     ctx->s = accept(*s, (struct sockaddr *)&addr, &addrlen);
 #endif
 
-    if (ctx->s == -1) {
+    if (ctx->s == -1)
+    {
         return -1;
     }
 
-    if (ctx->debug) {
+    if (ctx->debug)
+    {
         printf("The client connection is accepted.\n");
     }
 
@@ -556,24 +660,30 @@ static int _modbus_udp_select(modbus_t *ctx, fd_set *rset, struct timeval *tv, i
     int s_rc;
     modbus_udp_t *ctx_udp = ctx->backend_data;
 
-	// Always return true if data exists in read buffer.
-	if( ctx_udp->_u )
-		return 1;
+    // Always return true if data exists in read buffer.
+    if (ctx_udp->_u)
+        return 1;
 
-    while ((s_rc = select(ctx->s+1, rset, NULL, NULL, tv)) == -1) {
-        if (errno == EINTR) {
-            if (ctx->debug) {
+    while ((s_rc = select(ctx->s + 1, rset, NULL, NULL, tv)) == -1)
+    {
+        if (errno == EINTR)
+        {
+            if (ctx->debug)
+            {
                 fprintf(stderr, "A non blocked signal was caught\n");
             }
             /* Necessary after an error */
             FD_ZERO(rset);
             FD_SET(ctx->s, rset);
-        } else {
+        }
+        else
+        {
             return -1;
         }
     }
 
-    if (s_rc == 0) {
+    if (s_rc == 0)
+    {
         errno = ETIMEDOUT;
         return -1;
     }
@@ -581,7 +691,8 @@ static int _modbus_udp_select(modbus_t *ctx, fd_set *rset, struct timeval *tv, i
     return s_rc;
 }
 
-static void _modbus_udp_free(modbus_t *ctx) {
+static void _modbus_udp_free(modbus_t *ctx)
+{
     free(ctx->backend_data);
     free(ctx);
 }
@@ -605,10 +716,9 @@ const modbus_backend_t _modbus_udp_backend = {
     _modbus_udp_close,
     _modbus_udp_flush,
     _modbus_udp_select,
-    _modbus_udp_free
-};
+    _modbus_udp_free};
 
-modbus_t* modbus_new_udp(const char *ip, int port)
+modbus_t *modbus_new_udp(const char *ip, int port)
 {
     modbus_t *ctx;
     modbus_udp_t *ctx_udp;
@@ -621,7 +731,8 @@ modbus_t* modbus_new_udp(const char *ip, int port)
     struct sigaction sa;
 
     sa.sa_handler = SIG_IGN;
-    if (sigaction(SIGPIPE, &sa, NULL) < 0) {
+    if (sigaction(SIGPIPE, &sa, NULL) < 0)
+    {
         /* The debug flag can't be set here... */
         fprintf(stderr, "Could not install SIGPIPE handler.\n");
         return NULL;
@@ -629,7 +740,8 @@ modbus_t* modbus_new_udp(const char *ip, int port)
 #endif
 
     ctx = (modbus_t *)malloc(sizeof(modbus_t));
-    if (ctx == NULL) {
+    if (ctx == NULL)
+    {
         return NULL;
     }
     _modbus_init_common(ctx);
@@ -640,30 +752,36 @@ modbus_t* modbus_new_udp(const char *ip, int port)
     ctx->backend = &_modbus_udp_backend;
 
     ctx->backend_data = (modbus_udp_t *)malloc(sizeof(modbus_udp_t));
-    if (ctx->backend_data == NULL) {
+    if (ctx->backend_data == NULL)
+    {
         modbus_free(ctx);
         errno = ENOMEM;
         return NULL;
     }
     ctx_udp = (modbus_udp_t *)ctx->backend_data;
 
-    if (ip != NULL) {
+    if (ip != NULL)
+    {
         dest_size = sizeof(char) * 16;
         ret_size = strlcpy(ctx_udp->ip, ip, dest_size);
-        if (ret_size == 0) {
+        if (ret_size == 0)
+        {
             fprintf(stderr, "The IP string is empty\n");
             modbus_free(ctx);
             errno = EINVAL;
             return NULL;
         }
 
-        if (ret_size >= dest_size) {
+        if (ret_size >= dest_size)
+        {
             fprintf(stderr, "The IP string has been truncated\n");
             modbus_free(ctx);
             errno = EINVAL;
             return NULL;
         }
-    } else {
+    }
+    else
+    {
         ctx_udp->ip[0] = '0';
     }
     ctx_udp->port = port;

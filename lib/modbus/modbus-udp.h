@@ -41,6 +41,7 @@ MODBUS_BEGIN_DECLS
 
 MODBUS_API modbus_t* modbus_new_udp(const char *ip_address, int port);
 MODBUS_API int modbus_udp_listen(modbus_t *ctx, int nb_connection);
+MODBUS_API int modbus_udp_bind(modbus_t *ctx);
 MODBUS_API int modbus_udp_accept(modbus_t *ctx, int *s);
 
 MODBUS_API modbus_t* modbus_new_udp_pi(const char *node, const char *service);
